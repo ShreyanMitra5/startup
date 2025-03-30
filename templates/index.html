@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Bias Analysis</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">Loan Bias Analysis</h1>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Upload Data</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="uploadForm">
+                            <div class="mb-3">
+                                <label for="csvFile" class="form-label">Upload CSV File</label>
+                                <input type="file" class="form-control" id="csvFile" accept=".csv" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Analyze Data</button>
+                        </form>
+                        <div id="errorMessage" class="alert alert-danger mt-3" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Bias Analysis Results</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="biasResults" class="text-center">
+                            <h3>Upload a CSV file to analyze bias</h3>
+                        </div>
+                        <a id="downloadLink" href="#" class="btn btn-success mt-3" style="display: none;">Download Biased Dataset</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Data Table</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table id="dataTable" class="table table-striped">
+                                <thead>
+                                    <tr id="tableHeader"></tr>
+                                </thead>
+                                <tbody id="tableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Data Differences</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="differencesTable" class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Metric</th>
+                                        <th>Original Mean</th>
+                                        <th>Biased Mean</th>
+                                        <th>Total Change</th>
+                                        <th>Changes by Gender</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="differencesBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Data Visualizations</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="visualizations">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div id="genderDistribution"></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div id="creditScoreDistribution"></div>
+                                </div>
+                            </div>
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <div id="incomeDistribution"></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div id="approvalRates"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+    <script>
+        let dataTable;
+
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            uploadFile();
+        });
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.style.display = 'none';
+        }
+
+        function uploadFile() {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showError('Please select a file first');
+                return;
+            }
+            
+            if (!file.name.endsWith('.csv')) {
+                showError('Please upload a CSV file');
+                return;
+            }
+            
+            hideError();
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Server error:', data);
+                    showError(`Error: ${data.error}\n\nDetails: ${data.details || 'No additional details available'}`);
+                    return;
+                }
+                
+                // Update the download link
+                const downloadLink = document.getElementById('downloadLink');
+                downloadLink.href = data.biased.download_link;
+                downloadLink.style.display = 'block';
+                
+                // Update the analysis results
+                updateAnalysisResults(data);
+                
+                // Update the data table
+                updateDataTable(data.original_data);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showError(`Error uploading file: ${error.message}`);
+            });
+        }
+
+        function updateDataTable(data) {
+            // Destroy existing DataTable if it exists
+            if (dataTable) {
+                dataTable.destroy();
+            }
+
+            // Clear existing table
+            const tableHeader = document.getElementById('tableHeader');
+            const tableBody = document.getElementById('tableBody');
+            tableHeader.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            // Add headers
+            const headers = Object.keys(data[0]);
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                tableHeader.appendChild(th);
+            });
+
+            // Add data rows
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.textContent = row[header];
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
+
+            // Initialize DataTable with enhanced features
+            dataTable = $('#dataTable').DataTable({
+                pageLength: 10,
+                order: [[0, 'asc']],
+                responsive: true,
+                dom: 'Bfrtip',
+                buttons: [
+                    'copy', 'csv', 'excel', 'pdf', 'print'
+                ],
+                scrollX: true,
+                scrollY: '400px',
+                scrollCollapse: true,
+                language: {
+                    search: "Search:",
+                    lengthMenu: "Show _MENU_ entries per page",
+                    info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                    paginate: {
+                        first: "First",
+                        last: "Last",
+                        next: "Next",
+                        previous: "Previous"
+                    }
+                }
+            });
+        }
+
+        function updateAnalysisResults(data) {
+            const biasResults = document.getElementById('biasResults');
+            let html = '<h3>Analysis Results</h3>';
+            
+            // Display bias metrics
+            for (const [sensitiveCol, metrics] of Object.entries(data.original.bias_metrics)) {
+                html += `<h4>${sensitiveCol} Analysis</h4>`;
+                for (const [metricCol, values] of Object.entries(metrics)) {
+                    html += `<p>${metricCol}:<br>`;
+                    for (const [group, value] of Object.entries(values)) {
+                        html += `${group}: ${value.toFixed(2)}<br>`;
+                    }
+                    html += `Bias Present: ${data.original.bias_present[sensitiveCol][metricCol] ? 'Yes' : 'No'}</p>`;
+                }
+            }
+            
+            biasResults.innerHTML = html;
+            
+            // Update visualizations
+            updateVisualizations(data);
+            
+            // Update differences table
+            updateDifferencesTable(data.differences);
+        }
+
+        function updateDifferencesTable(differences) {
+            const tbody = document.getElementById('differencesBody');
+            tbody.innerHTML = '';
+            
+            for (const [metric, data] of Object.entries(differences)) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${metric}</td>
+                    <td>${data.original_mean.toFixed(2)}</td>
+                    <td>${data.biased_mean.toFixed(2)}</td>
+                    <td class="${data.total_change < 0 ? 'text-danger' : 'text-success'}">
+                        ${data.total_change.toFixed(2)}
+                    </td>
+                    <td>
+                        ${Object.entries(data.mean_differences)
+                            .map(([gender, diff]) => 
+                                `${gender}: ${diff.toFixed(2)}`
+                            )
+                            .join('<br>')}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            }
+        }
+
+        function updateVisualizations(data) {
+            // Update gender distribution
+            if (data.original.visualization_data.gender_distribution) {
+                const genderData = data.original.visualization_data.gender_distribution;
+                const genderTrace = {
+                    values: Object.values(genderData),
+                    labels: Object.keys(genderData),
+                    type: 'pie'
+                };
+                Plotly.newPlot('genderDistribution', [genderTrace], {
+                    title: 'Gender Distribution',
+                    height: 400
+                });
+            }
+            
+            // Update credit score distribution
+            if (data.original.visualization_data.credit_score_ranges) {
+                const creditData = data.original.visualization_data.credit_score_ranges;
+                const creditTrace = {
+                    x: Object.keys(creditData),
+                    y: Object.values(creditData),
+                    type: 'scatter',
+                    mode: 'markers+lines',
+                    marker: {
+                        size: 12,
+                        color: '#1f77b4'
+                    },
+                    line: {
+                        color: '#1f77b4',
+                        width: 2
+                    }
+                };
+                Plotly.newPlot('creditScoreDistribution', [creditTrace], {
+                    title: 'Credit Score Distribution',
+                    xaxis: { title: 'Score Range' },
+                    yaxis: { title: 'Count' },
+                    height: 400
+                });
+            }
+            
+            // Update income distribution
+            if (data.original.visualization_data.income_ranges) {
+                const incomeData = data.original.visualization_data.income_ranges;
+                const incomeTrace = {
+                    x: Object.keys(incomeData),
+                    y: Object.values(incomeData),
+                    type: 'scatter',
+                    mode: 'markers+lines',
+                    marker: {
+                        size: 12,
+                        color: '#2ca02c'
+                    },
+                    line: {
+                        color: '#2ca02c',
+                        width: 2
+                    }
+                };
+                Plotly.newPlot('incomeDistribution', [incomeTrace], {
+                    title: 'Income Distribution',
+                    xaxis: { title: 'Income Range' },
+                    yaxis: { title: 'Count' },
+                    height: 400
+                });
+            }
+            
+            // Update approval rates
+            if (data.original.visualization_data.loan_status_distribution) {
+                const approvalData = data.original.visualization_data.loan_status_distribution;
+                const approvalTrace = {
+                    values: Object.values(approvalData),
+                    labels: Object.keys(approvalData),
+                    type: 'pie'
+                };
+                Plotly.newPlot('approvalRates', [approvalTrace], {
+                    title: 'Loan Approval Distribution',
+                    height: 400
+                });
+            }
+        }
+    </script>
+</body>
+</html> 
